@@ -1,0 +1,8 @@
+source 'http://rubygems.org'
+gem 'jasmine'
+gem 'rake'
+gem 'guard'
+gem 'guard-sass'
+gem 'guard-coffeescript'
+gem 'guard-process'
+gem 'therubyracer'
