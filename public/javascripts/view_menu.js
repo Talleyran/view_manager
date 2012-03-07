@@ -29,10 +29,10 @@ gxp.plugins.ViewMenu = Ext.extend(gxp.plugins.Tool, {
     "EPSG:900913": {
       projection: "EPSG:900913",
       units: "m",
-      maxResolution: 156543.03392804097,
+      maxResolution: 156543.03390625,
       maxExtent: new OpenLayers.Bounds(-20037508.34, -20037508.34, 20037508.34, 20037508.34),
-      resolutions: [156543.03392804097, 78271.51696402048, 39135.75848201024, 19567.87924100512, 9783.93962050256, 4891.96981025128, 2445.98490512564, 1222.99245256282, 611.49622628141, 305.748113140705, 152.8740565703525, 76.43702828517625, 38.21851414258813, 19.109257071294063, 9.554628535647032, 4.777314267823516, 2.388657133911758, 1.194328566955879, 0.5971642834779395, 0.29858214173896974],
-      scales: [559082565.9331403, 279541282.96657014, 139770641.48328507, 69885320.74164253, 34942660.37082127, 17471330.185410634, 8735665.092705317, 4367832.546352658, 2183916.273176329, 1091958.1365881646, 545979.0682940823, 272989.53414704115, 136494.76707352058, 68247.38353676029, 34123.691768380144, 17061.845884190072, 8530.922942095036, 4265.461471047518, 2132.730735523759, 1066.3653677618795]
+      resolutions: [156543.03390625, 78271.516953125, 39135.7584765625, 19567.87923828125, 9783.939619140625, 4891.9698095703125, 2445.9849047851562, 1222.9924523925781, 611.4962261962891, 305.74811309814453, 152.87405654907226, 76.43702827453613, 38.218514137268066, 19.109257068634033, 9.554628534317017, 4.777314267158508, 2.388657133579254, 1.194328566789627, 0.5971642833948135, 0.29858214169740677],
+      scales: [559082565.8553153, 279541282.92765766, 139770641.46382883, 69885320.73191442, 34942660.36595721, 17471330.182978604, 8735665.091489302, 4367832.545744651, 2183916.2728723255, 1091958.1364361627, 545979.0682180814, 272989.5341090407, 136494.76705452034, 68247.38352726017, 34123.691763630086, 17061.845881815043, 8530.922940907521, 4265.461470453761, 2132.7307352268804, 1066.3653676134402]
     },
     "EPSG:4326": {
       projection: "EPSG:4326",
@@ -261,7 +261,7 @@ gxp.plugins.ViewMenu = Ext.extend(gxp.plugins.Tool, {
     return this.target.mapPanel.fireEvent("projectionchanged", projection);
   },
   reprojectLayers: function(projection, options) {
-    var i, layer, map, maxExtent, rec, source, wgsMaxExtent, _i, _len, _ref, _results;
+    var buffer, i, layer, map, maxExtent, rec, source, wgsMaxExtent, _i, _len, _ref, _results;
     map = this.target.mapPanel.map;
     _ref = map.layers;
     _results = [];
@@ -284,8 +284,9 @@ gxp.plugins.ViewMenu = Ext.extend(gxp.plugins.Tool, {
           if (source.ptype === 'gxp_wmscsource') {
             source.projection = projection;
             wgsMaxExtent = new OpenLayers.Bounds.fromArray(rec.get('wgsMaxExtentArray'));
-            maxExtent;
-            if (this.projections["EPSG:4326"].maxExtent.left === wgsMaxExtent.left && this.projections["EPSG:4326"].maxExtent.right === wgsMaxExtent.right && this.projections["EPSG:4326"].maxExtent.top === wgsMaxExtent.top && this.projections["EPSG:4326"].maxExtent.bottom === wgsMaxExtent.bottom) {
+            maxExtent = null;
+            buffer = 20;
+            if (Math.abs(this.projections["EPSG:4326"].maxExtent.left - wgsMaxExtent.left) < buffer && Math.abs(this.projections["EPSG:4326"].maxExtent.right - wgsMaxExtent.right) < buffer && Math.abs(this.projections["EPSG:4326"].maxExtent.top - wgsMaxExtent.top) < buffer && Math.abs(this.projections["EPSG:4326"].maxExtent.bottom - wgsMaxExtent.bottom) < buffer) {
               maxExtent = this.projections[projection].maxExtent;
             } else {
               if (projection === "EPSG:4326") {
@@ -305,9 +306,13 @@ gxp.plugins.ViewMenu = Ext.extend(gxp.plugins.Tool, {
             }, layer);
           }
           if (source.ptype === 'gxp_osmsource' && projection !== 'EPSG:900913') {
-            _results.push(rec.getLayer().visibility = false);
+            _results.push(rec.getLayer().setVisibility(false));
           } else {
-            _results.push(void 0);
+            if (rec.getLayer().visibility) {
+              _results.push(rec.getLayer().redraw());
+            } else {
+              _results.push(void 0);
+            }
           }
         } else {
           _results.push(this.reprojectLayer(options, layer));
