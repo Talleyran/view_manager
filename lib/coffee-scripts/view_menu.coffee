@@ -39,8 +39,10 @@ gxp.plugins.ViewMenu = Ext.extend(gxp.plugins.Tool,
       units: "degrees"
       maxResolution: 0.703125
       maxExtent: new OpenLayers.Bounds -180, -90, 180, 90
-      resolutions: [0.703125, 0.3515625, 0.17578125, 0.087890625, 0.0439453125, 0.02197265625, 0.010986328125, 0.0054931640625, 0.00274658203125, 0.001373291015625, 0.0006866455078125, 0.00034332275390625, 0.000171661376953125, 0.0000858306884765625, 0.00004291534423828125, 0.000021457672119140625, 0.000010728836059570312, 0.000005364418029785156, 0.000002682209014892578, 0.000001341104507446289]
-      scales: [279037043.6383928, 139518521.8191964, 69759260.9095982, 34879630.4547991, 17439815.22739955, 8719907.613699775, 4359953.806849888, 2179976.903424944, 1089988.451712472, 544994.225856236, 272497.112928118, 136248.556464059, 68124.2782320295, 34062.13911601475, 17031.069558007373, 8515.534779003687, 4257.767389501843, 2128.8836947509217, 1064.4418473754608, 532.2209236877304]
+      #resolutions: [0.703125, 0.3515625, 0.17578125, 0.087890625, 0.0439453125, 0.02197265625, 0.010986328125, 0.0054931640625, 0.00274658203125, 0.001373291015625, 0.0006866455078125, 0.00034332275390625, 0.000171661376953125, 0.0000858306884765625, 0.00004291534423828125, 0.000021457672119140625, 0.000010728836059570312, 0.000005364418029785156, 0.000002682209014892578, 0.000001341104507446289]
+      #scales: [279037043.6383928, 139518521.8191964, 69759260.9095982, 34879630.4547991, 17439815.22739955, 8719907.613699775, 4359953.806849888, 2179976.903424944, 1089988.451712472, 544994.225856236, 272497.112928118, 136248.556464059, 68124.2782320295, 34062.13911601475, 17031.069558007373, 8515.534779003687, 4257.767389501843, 2128.8836947509217, 1064.4418473754608, 532.2209236877304]
+      resolutions: [1.40625, 0.703125, 0.3515625, 0.17578125, 0.087890625, 0.0439453125, 0.02197265625, 0.010986328125, 0.0054931640625, 0.00274658203125, 0.001373291015625, 0.0006866455078125, 0.00034332275390625, 0.000171661376953125, 0.0000858306884765625, 0.00004291534423828125, 0.000021457672119140625, 0.000010728836059570312, 0.000005364418029785156, 0.000002682209014892578]
+      scales: [5022.324140624999, 2511.1620703124995, 1255.5810351562498, 627.7905175781249, 313.89525878906244, 156.94762939453122, 78.47381469726561, 39.236907348632805, 19.618453674316402, 9.809226837158201, 4.904613418579101, 2.4523067092895503, 1.2261533546447752, 0.6130766773223876, 0.3065383386611938, 0.1532691693305969, 0.07663458466529845, 0.03831729233264922, 0.01915864616632461, 0.009579323083162306]
       #restrictedExtent: new OpenLayers.Bounds -180, -89, 180, 89
     }
     "EPSG:102012": {
@@ -91,6 +93,12 @@ gxp.plugins.ViewMenu = Ext.extend(gxp.plugins.Tool,
 
   realDateLine: false
 
+  baseRec: null
+
+  #mainSource: 'gispro'
+
+  #mainLayer: 'eko_merge'
+
   init: ()->
     gxp.plugins.ViewMenu.superclass.init.apply this, arguments
     @target.mapPanel.layers.on 'add', @projectOnLoad, this
@@ -105,6 +113,7 @@ gxp.plugins.ViewMenu = Ext.extend(gxp.plugins.Tool,
       if rec.get('source') == 'baselayer' && rec.getLayer().map? # && rec.getLayer().visibility
         @target.mapPanel.layers.removeListener 'add', @projectOnLoad, this
         @target.mapPanel.map.setBaseLayer(rec.getLayer())
+        @baseRec = rec
         @reprojectMap @target.map.projection
 
   addActions: ->
@@ -314,8 +323,9 @@ gxp.plugins.ViewMenu = Ext.extend(gxp.plugins.Tool,
               maxExtent: maxExtent #rec.get('maxExtent')[projection]
               restrictedExtent: maxExtent # rec.get('maxExtent')[projection]
             }, layer
-          if source.ptype == 'gxp_osmsource' && projection != 'EPSG:900913'
-            rec.getLayer().setVisibility false
+          if ( source.ptype == 'gxp_osmsource' || source.ptype == 'gxp_googlesource' ) && projection != 'EPSG:900913'
+            if rec.getLayer().visibility
+              @baseRec.getLayer().setVisibility true
           else
             if rec.getLayer().visibility
               rec.getLayer().redraw()
@@ -333,10 +343,10 @@ gxp.plugins.ViewMenu = Ext.extend(gxp.plugins.Tool,
 
 
   setWrapDateLine: (v, makeExtent)->
+    #TODO filter by source
     allowWrapDateLine = @allowWrapDateLine[@target.map.projection]
     if ( v != @realDateLine )
       map = @target.mapPanel.map
-      #extent = @cutExtent map.getExtent(), map.maxExtent
       extent = map.getExtent()
       for layer in map.layers
         if layer.maxExtent.left <= map.maxExtent.left && layer.maxExtent.bottom <= map.maxExtent.bottom && layer.maxExtent.top >= map.maxExtent.top && layer.maxExtent.right >= map.maxExtent.right
