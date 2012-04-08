@@ -1,0 +1,87 @@
+# src_files
+#
+# Return an array of filepaths relative to src_dir to include before jasmine specs.
+# Default: []
+#
+# EXAMPLE:
+#
+# src_files:
+#   - lib/source1.js
+#   - lib/source2.js
+#   - dist/**/*.js
+#
+src_files:
+    - externals/extjs/ext-base.js
+    - externals/extjs/ext-all-debug.js
+    - externals/gxp/externals/openlayers/lib/OpenLayers.js
+    - externals/gxp/externals/geoext/lib/GeoExt.js
+    - externals/gxp/externals/geoext/lib/overrides/override-ext-ajax.js
+    - externals/gxp/src/script/loader.js
+
+    - public/javascripts/overrides/**/*.js
+    - public/javascripts/*.js
+    - public/javascripts/locale/**/*.js
+
+# stylesheets
+#
+# Return an array of stylesheet filepaths relative to src_dir to include before jasmine specs.
+# Default: []
+#
+# EXAMPLE:
+#
+# stylesheets:
+#   - css/style.css
+#   - stylesheets/*.css
+#
+stylesheets:
+    - externals/extjs/ext-all.css
+    - externals/gxp/externals/openlayers/theme/default/style.css
+    - externals/gxp/externals/openlayers/theme/default/google.css
+    - externals/gxp/externals/geoext/resources/css/geoext-all.css
+    - externals/gxp/src/theme/all.css
+
+# helpers
+#
+# Return an array of filepaths relative to spec_dir to include before jasmine specs.
+# Default: ["helpers/**/*.js"]
+#
+# EXAMPLE:
+#
+# helpers:
+#   - helpers/**/*.js
+#
+helpers:
+
+# spec_files
+#
+#  Return an array of filepaths relative to spec_dir to include.
+# Default: ["**/*[sS]pec.js"]
+#
+# EXAMPLE:
+#
+# spec_files:
+#   - **/*[sS]pec.js
+#
+spec_files:
+
+# src_dir
+#
+# Source directory path. Your src_files must be returned relative to this path. Will use root if left blank.
+# Default: project root
+#
+# EXAMPLE:
+#
+# src_dir: public
+#
+src_dir:
+
+# spec_dir
+#
+# Spec directory path. Your spec_files must be returned relative to this path.
+# Default: spec/javascripts
+#
+# EXAMPLE:
+#
+# spec_dir: spec/javascripts
+#
+spec_dir:

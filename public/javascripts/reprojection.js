@@ -1,30 +1,8 @@
 
 Ext.namespace("gxp.plugins");
 
-gxp.plugins.ViewMenu = Ext.extend(gxp.plugins.Tool, {
-  ptype: "gispro_viewmenu",
-  constructor: function(config) {
-    this.graticulOptions = config.graticulOptions;
-    return gxp.plugins.ViewMenu.superclass.constructor.apply(this, arguments);
-  },
-  panelText: 'View',
-  panelTooltip: 'View',
-  graticulText: 'Graticul',
-  graticulTooltip: 'Graticul',
-  projectionsGroupText: 'Projections',
-  overviewMapText: 'Overview map',
-  overviewMapTooltip: 'Overview map',
-  rssText: 'Rss',
-  rssTooltip: 'Rss',
-  wrapText: 'Wrap',
-  wrapTooltip: 'Wrap',
-  projectionsText: {
-    'EPSG:900913': 'Mercator',
-    'EPSG:4326': 'Geographic',
-    'EPSG:102012': 'Conus',
-    'EPSG:3576': 'Polar North',
-    'EPSG:3976': 'Polar South'
-  },
+gxp.plugins.Reprojection = Ext.extend(gxp.plugins.Tool, {
+  ptype: "gispro_reprojection",
   projections: {
     "EPSG:900913": {
       projection: "EPSG:900913",
@@ -74,44 +52,36 @@ gxp.plugins.ViewMenu = Ext.extend(gxp.plugins.Tool, {
     "EPSG:3576": false,
     "EPSG:3976": false
   },
-  ovLayer: [],
-  maxRatio: 50,
-  minRatio: 10,
+  baseSource: 'baselayer',
   wrapDateLine: false,
   realDateLine: false,
   baseRec: null,
+  maxExtentBuffer: 20,
+  layerTree: null,
   init: function() {
-    var _this = this;
-    gxp.plugins.ViewMenu.superclass.init.apply(this, arguments);
-    this.target.mapPanel.layers.on('add', this.reprojectOnLoad, this);
-    return this.target.mapPanel.on('projectionchanged', function() {
-      if (_this.allowWrapDateLine[_this.target.map.projection]) {
-        return Ext.getCmp('gisproViewWrapCheckBox').enable();
+    var k, tool, _ref, _results;
+    gxp.plugins.Reprojection.superclass.init.apply(this, arguments);
+    this.target.on("ready", this.projectOnLoad, this, {
+      single: true
+    });
+    _ref = this.target.tools;
+    _results = [];
+    for (k in _ref) {
+      tool = _ref[k];
+      if (tool.ptype === 'gxp_layertree') {
+        _results.push(this.layerTree = tool);
       } else {
-        return Ext.getCmp('gisproViewWrapCheckBox').disable();
+        _results.push(void 0);
       }
-    });
+    }
+    return _results;
   },
-  reprojectOnLoad: function() {
-    var _this = this;
-    return this.target.mapPanel.layers.each(function(rec) {
-      if (rec.get('source') === 'baselayer' && (rec.getLayer().map != null)) {
-        _this.target.mapPanel.layers.removeListener('add', _this.reprojectOnLoad, _this);
-        _this.target.mapPanel.map.setLayerIndex(rec.getLayer(), 0);
-        _this.baseRec = rec;
-        _this.reprojectMap(_this.target.map.projection, true);
-        _this.target.mapPanel.layers.on('add', _this.reprojectOnAddLayer, _this);
-        return _this.target.mapPanel.map.events.on({
-          'changebaselayer': function(e) {
-            if (e.layer !== rec.getLayer()) {
-              return _this.target.mapPanel.map.setLayerIndex(rec.getLayer(), 0);
-            }
-          }
-        });
-      }
-    });
+  projectOnLoad: function() {
+    this.baseRec = this.target.mapPanel.layers.getAt(this.target.mapPanel.layers.find('source', this.baseSource));
+    this.reprojectMap(this.target.map.projection);
+    return this.target.mapPanel.layers.on('add', this.reprojectOnAddLayers, this);
   },
-  reprojectOnAddLayer: function(store, recs) {
+  reprojectOnAddLayers: function(store, recs) {
     var rec, _i, _len, _results;
     _results = [];
     for (_i = 0, _len = recs.length; _i < _len; _i++) {
@@ -120,7 +90,7 @@ gxp.plugins.ViewMenu = Ext.extend(gxp.plugins.Tool, {
     }
     return _results;
   },
-  reprojectMap: function(projection, bounds) {
+  reprojectMap: function(projection) {
     var center, lonlat, map, old_projection, options, resolution,
       _this = this;
     this.target.mapPanel.fireEvent("beforeprojectionchanged", projection);
@@ -148,44 +118,42 @@ gxp.plugins.ViewMenu = Ext.extend(gxp.plugins.Tool, {
     map.zoomToExtent(options.maxExtent);
     if (this.ov != null) this.ov.setProjection(options);
     this.setWrapDateLine(this.allowWrapDateLine[projection] && this.wrapDateLine, false);
-    if (bounds) {
-      if (this.target.map.zoom != null) {
-        map.zoomTo(this.target.map.zoom);
-        delete this.target.map.zoom;
-      } else {
-        map.zoomTo(map.getZoomForResolution(resolution, true));
-      }
-      if (this.target.map.center != null) {
-        if (this.target.map.center.CLASS_NAME && this.target.map.center.CLASS_NAME === "OpenLayers.LonLat") {
-          map.setCenter(this.target.map.center);
-        } else {
-          lonlat = new OpenLayers.LonLat(this.target.map.center[0], this.target.map.center[1]);
-          map.setCenter(lonlat);
-        }
-        delete this.target.map.center;
-      } else {
-        center.transform(new OpenLayers.Projection(old_projection), new OpenLayers.Projection(projection));
-        map.setCenter(center);
-      }
+    if (this.target.map.zoom != null) {
+      map.zoomTo(this.target.map.zoom);
+      delete this.target.map.zoom;
     } else {
-      map.zoomToExtent(options.maxExtent);
+      map.zoomTo(map.getZoomForResolution(resolution, true));
+    }
+    if (this.target.map.center != null) {
+      if (this.target.map.center.CLASS_NAME && this.target.map.center.CLASS_NAME === "OpenLayers.LonLat") {
+        map.setCenter(this.target.map.center);
+      } else {
+        lonlat = new OpenLayers.LonLat(this.target.map.center[0], this.target.map.center[1]);
+        map.setCenter(lonlat);
+      }
+      delete this.target.map.center;
+    } else {
+      center.transform(new OpenLayers.Projection(old_projection), new OpenLayers.Projection(projection));
+      map.setCenter(center);
     }
     return this.target.mapPanel.fireEvent("projectionchanged", projection);
   },
   reprojectLayerRecord: function(projection, rec) {
-    var buffer, layer, maxExtent, options, source, wgsMaxExtent;
+    var layer, maxExtent, options, source, wgsMaxExtent;
     source = this.target.layerSources[rec.get('source')];
     layer = rec.getLayer();
     options = this.projections[projection];
     if (source != null) {
-      source.projection = projection;
       if (source.ptype === 'gxp_olsource') {
-        return this.reprojectLayer(layer, options);
-      } else if (source.ptype === 'gxp_wmscsource') {
+        source.projection = projection;
+        rec.getLayer().isBaseLayer = true;
+        this.reprojectLayer(layer, options);
+      }
+      if (source.ptype === 'gxp_wmscsource') {
+        source.projection = projection;
         wgsMaxExtent = new OpenLayers.Bounds.fromArray(rec.get('wgsMaxExtentArray'));
         maxExtent = null;
-        buffer = 20;
-        if (Math.abs(this.projections["EPSG:4326"].maxExtent.left - wgsMaxExtent.left) < buffer && Math.abs(this.projections["EPSG:4326"].maxExtent.right - wgsMaxExtent.right) < buffer && Math.abs(this.projections["EPSG:4326"].maxExtent.top - wgsMaxExtent.top) < buffer && Math.abs(this.projections["EPSG:4326"].maxExtent.bottom - wgsMaxExtent.bottom) < buffer) {
+        if (Math.abs(this.projections["EPSG:4326"].maxExtent.left - wgsMaxExtent.left) < this.maxExtentBuffer && Math.abs(this.projections["EPSG:4326"].maxExtent.right - wgsMaxExtent.right) < this.maxExtentBuffer && Math.abs(this.projections["EPSG:4326"].maxExtent.top - wgsMaxExtent.top) < this.maxExtentBuffer && Math.abs(this.projections["EPSG:4326"].maxExtent.bottom - wgsMaxExtent.bottom) < this.maxExtentBuffer) {
           maxExtent = this.projections[projection].maxExtent;
         } else {
           if (projection === "EPSG:4326") {
@@ -194,7 +162,7 @@ gxp.plugins.ViewMenu = Ext.extend(gxp.plugins.Tool, {
             maxExtent = wgsMaxExtent.transform(new OpenLayers.Projection("EPSG:4326"), new OpenLayers.Projection(projection));
           }
         }
-        return this.reprojectLayer(layer, {
+        this.reprojectLayer(layer, {
           projection: projection,
           units: options.units,
           resolutions: rec.get('resolutions')[projection],
@@ -203,13 +171,15 @@ gxp.plugins.ViewMenu = Ext.extend(gxp.plugins.Tool, {
           maxExtent: maxExtent,
           restrictedExtent: maxExtent
         });
-      } else if (source.ptype === 'gxp_osmsource' || source.ptype === 'gxp_googlesource') {
-        if (rec.getLayer().visibility && projection !== 'EPSG:900913') {
+      }
+      if ((source.ptype === 'gxp_osmsource' || source.ptype === 'gxp_googlesource') && projection !== 'EPSG:900913') {
+        if (rec.getLayer().visibility) {
+          if (!this.layerTree) rec.getLayer().setVisibility(false);
           return this.baseRec.getLayer().setVisibility(true);
         }
-      } else {
-        return this.reprojectLayer(layer, options);
       }
+    } else {
+      return this.reprojectLayer(layer, options);
     }
   },
   reprojectLayer: function(layer, options) {
@@ -242,123 +212,7 @@ gxp.plugins.ViewMenu = Ext.extend(gxp.plugins.Tool, {
       this.target.mapPanel.fireEvent("wrapdatelinechanged", this.realDateLine);
     }
     if (allowWrapDateLine) return this.wrapDateLine = v;
-  },
-  genProjectionOptions: function() {
-    var k, v, _ref, _results;
-    _ref = this.projections;
-    _results = [];
-    for (k in _ref) {
-      v = _ref[k];
-      _results.push({
-        boxLabel: this.projectionsText[k],
-        inputValue: k,
-        name: 'proj',
-        id: "gispro" + k + "ProjectionRadio",
-        checked: this.target.map.projection === k
-      });
-    }
-    return _results;
-  },
-  addActions: function() {
-    var graticul,
-      _this = this;
-    graticul = new OpenLayers.Control.Graticule(this.graticulOptions);
-    this.target.mapPanel.map.addControl(graticul);
-    graticul.deactivate();
-    this.ov = new GeoExt.OverviewMap({
-      title: this.overviewMapText,
-      controlOptions: {
-        maximized: true,
-        mapOptions: this.projections[this.target.map.projection],
-        maxRatio: this.maxRatio,
-        minRatio: this.minRatio
-      },
-      map: this.target.mapPanel.map,
-      closeAction: 'hide',
-      layer: this.ovLayer,
-      listeners: {
-        hide: function() {
-          return Ext.getCmp('gisproViewMenuOverviewCheckBox').setChecked(false, true);
-        }
-      }
-    });
-    this.menu = new Ext.Button({
-      text: this.panelText,
-      menu: new Ext.menu.Menu({
-        items: [
-          {
-            checked: false,
-            text: this.graticulText,
-            tooltip: this.graticulTooltip,
-            listeners: {
-              checkchange: function(item, checked) {
-                if (checked) {
-                  return graticul.activate();
-                } else {
-                  return graticul.deactivate();
-                }
-              }
-            }
-          }, {
-            id: 'gisproViewMenuOverviewCheckBox',
-            checked: false,
-            text: this.overviewMapText,
-            tooltip: this.overviewMapTooltip,
-            listeners: {
-              checkchange: function(item, checked) {
-                if (checked) {
-                  return _this.ov.show();
-                } else {
-                  return _this.ov.hide();
-                }
-              }
-            }
-          }, {
-            id: 'gisproViewWrapCheckBox',
-            checked: false,
-            text: this.wrapText,
-            tooltip: this.wrapTooltip,
-            listeners: {
-              checkchange: function(item, checked) {
-                if (checked) {
-                  return _this.setWrapDateLine(true);
-                } else {
-                  return _this.setWrapDateLine(false);
-                }
-              }
-            }
-          }, {
-            checked: false,
-            text: this.rssText,
-            tooltip: this.rssTooltip,
-            handler: function() {
-              return rssVar.show = rssVar.show ^ 1;
-            }
-          }, {
-            text: this.projectionsGroupText,
-            menu: {
-              items: [
-                {
-                  xtype: 'radiogroup',
-                  fieldLabel: 'Single Column',
-                  itemCls: 'x-check-group-alt',
-                  columns: 1,
-                  style: 'margin-left: 6px',
-                  items: [this.genProjectionOptions()],
-                  listeners: {
-                    change: function(radiogroup, radio) {
-                      return _this.reprojectMap(radio.inputValue, true);
-                    }
-                  }
-                }
-              ]
-            }
-          }
-        ]
-      })
-    });
-    return gxp.plugins.ViewMenu.superclass.addActions.apply(this, [this.menu]);
   }
 });
 
-Ext.preg(gxp.plugins.ViewMenu.prototype.ptype, gxp.plugins.ViewMenu);
+Ext.preg(gxp.plugins.Reprojection.prototype.ptype, gxp.plugins.Reprojection);

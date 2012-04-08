@@ -95,26 +95,177 @@ gxp.plugins.ViewMenu = Ext.extend(gxp.plugins.Tool,
 
   baseRec: null
 
-  #mainSource: 'gispro'
-
-  #mainLayer: 'eko_merge'
-
   init: ()->
     gxp.plugins.ViewMenu.superclass.init.apply this, arguments
-    @target.mapPanel.layers.on 'add', @projectOnLoad, this
+    @target.mapPanel.layers.on 'add', @reprojectOnLoad, this
     @target.mapPanel.on 'projectionchanged', =>
       if @allowWrapDateLine[@target.map.projection]
         Ext.getCmp('gisproViewWrapCheckBox').enable()
       else
         Ext.getCmp('gisproViewWrapCheckBox').disable()
 
-  projectOnLoad: ->
+  reprojectOnLoad: ->
     @target.mapPanel.layers.each (rec)=>
       if rec.get('source') == 'baselayer' && rec.getLayer().map? # && rec.getLayer().visibility
-        @target.mapPanel.layers.removeListener 'add', @projectOnLoad, this
-        @target.mapPanel.map.setBaseLayer(rec.getLayer())
+        @target.mapPanel.layers.removeListener 'add', @reprojectOnLoad, this
+        @target.mapPanel.map.setLayerIndex(rec.getLayer(),0)
         @baseRec = rec
-        @reprojectMap @target.map.projection
+        @reprojectMap @target.map.projection, true
+        @target.mapPanel.layers.on 'add', @reprojectOnAddLayer, this
+        #TODO fix hack!
+        @target.mapPanel.map.events.on 'changebaselayer': (e)=>
+          if e.layer != rec.getLayer()
+            @target.mapPanel.map.setLayerIndex(rec.getLayer(),0)
+
+
+  reprojectOnAddLayer: (store,recs)->
+    for rec in recs
+      @reprojectLayerRecord(@target.map.projection, rec)
+
+  reprojectMap: (projection, bounds)->
+    @target.mapPanel.fireEvent("beforeprojectionchanged", projection)
+
+    old_projection = @target.map.projection
+    @target.map.projection = projection
+    map = @target.mapPanel.map
+
+    if @projections[projection].units == @projections[old_projection].units
+      resolution = map.getResolution()
+    else
+      if @projections[projection].units == 'm'
+        resolution = map.getResolution() * 111000
+      else
+        resolution = map.getResolution() / 111000
+
+    center = map.center
+    options = @projections[projection]
+    map.setOptions options
+    map.setOptions { restrictedExtent: new OpenLayers.Bounds options.maxExtent.left*2, options.maxExtent.bottom*2, options.maxExtent.right*2, options.maxExtent.top*2 }
+
+    #reproject records
+    @target.mapPanel.layers.each (rec,i)=>
+      @reprojectLayerRecord(projection, rec)
+
+    map.zoomToExtent options.maxExtent  #TODO hack: need better way
+    if @ov?
+      @ov.setProjection options
+
+    @setWrapDateLine(@allowWrapDateLine[projection] && @wrapDateLine, false)
+
+    if bounds
+      if @target.map.zoom?
+        map.zoomTo @target.map.zoom
+        delete @target.map.zoom
+      else
+        map.zoomTo map.getZoomForResolution(resolution, true)
+
+      if @target.map.center?
+        if @target.map.center.CLASS_NAME && @target.map.center.CLASS_NAME=="OpenLayers.LonLat"
+          map.setCenter @target.map.center
+        else
+          lonlat = new OpenLayers.LonLat @target.map.center[0],@target.map.center[1]
+          map.setCenter lonlat
+        delete @target.map.center
+      else
+        center.transform(new OpenLayers.Projection(old_projection),new OpenLayers.Projection(projection))
+        map.setCenter center
+    else
+      map.zoomToExtent options.maxExtent
+
+    @target.mapPanel.fireEvent("projectionchanged", projection)
+
+
+  reprojectLayerRecord: (projection, rec)->
+    source = @target.layerSources[ rec.get('source') ]
+    layer = rec.getLayer()
+    options = @projections[projection]
+
+    if source?
+      source.projection = projection
+      if source.ptype == 'gxp_olsource'
+        #rec.getLayer().isBaseLayer = true
+        @reprojectLayer layer, options
+
+      else if source.ptype == 'gxp_wmscsource'
+        wgsMaxExtent = new OpenLayers.Bounds.fromArray( rec.get('wgsMaxExtentArray') )
+        maxExtent = null
+        #console.log(Math.abs(@projections["EPSG:4326"].maxExtent.left - wgsMaxExtent.left))
+        #console.log(Math.abs(@projections["EPSG:4326"].maxExtent.right - wgsMaxExtent.right))
+        #console.log(Math.abs(@projections["EPSG:4326"].maxExtent.top - wgsMaxExtent.top))
+        #console.log(Math.abs(@projections["EPSG:4326"].maxExtent.bottom - wgsMaxExtent.bottom))
+        buffer = 20
+        if Math.abs(@projections["EPSG:4326"].maxExtent.left - wgsMaxExtent.left)<buffer && Math.abs(@projections["EPSG:4326"].maxExtent.right - wgsMaxExtent.right)<buffer && Math.abs(@projections["EPSG:4326"].maxExtent.top - wgsMaxExtent.top)<buffer && Math.abs(@projections["EPSG:4326"].maxExtent.bottom - wgsMaxExtent.bottom)<buffer
+          maxExtent = @projections[projection].maxExtent
+        else
+          if projection == "EPSG:4326"
+            maxExtent = wgsMaxExtent
+          else
+            maxExtent = wgsMaxExtent.transform(new OpenLayers.Projection("EPSG:4326"),new OpenLayers.Projection(projection))
+
+        #console.log(
+          #rec.getLayer().params.LAYERS,
+          #rec.get('resolutions')[projection],
+          #rec.get('maxResolution')[projection],
+          #rec.get('minResolution')[projection],
+          #rec.get('maxExtent')[projection]
+        #)
+
+        @reprojectLayer layer, {
+          projection: projection
+          #
+          #resolutions: if rec.get('resolutions')[projection]? then rec.get('resolutions')[projection] else options.resolutions
+          #maxResolution: if rec.get('maxResolution')[projection]? then rec.get('maxResolution')[projection] else options.maxResolution
+          #minResolution: if rec.get('minResolution')[projection]? then rec.get('minResolution')[projection] else options.minResolution
+          #maxExtent: if rec.get('maxExtent')[projection]? then rec.get('maxExtent')[projection] else options.maxExtent
+          #restrictedExtent: if rec.get('maxExtent')[projection]? then rec.get('maxExtent')[projection] else options.maxExtent
+          #
+          units: options.units
+          resolutions: rec.get('resolutions')[projection]
+          maxResolution: rec.get('maxResolution')[projection]
+          minResolution: rec.get('minResolution')[projection]
+          maxExtent: maxExtent #rec.get('maxExtent')[projection]
+          restrictedExtent: maxExtent # rec.get('maxExtent')[projection]
+        }
+
+      else if ( source.ptype == 'gxp_osmsource' || source.ptype == 'gxp_googlesource' )
+        if rec.getLayer().visibility && projection != 'EPSG:900913'
+          @baseRec.getLayer().setVisibility true
+
+      else
+        @reprojectLayer layer, options
+
+
+  reprojectLayer: (layer, options)->
+    if layer.getTileOrigin?
+      layer.tileOrigin = null
+    layer.addOptions options, true
+    layer.addOptions {restrictedExtent: options.maxExtent}, true
+    if layer.visibility
+      layer.redraw()
+
+
+  setWrapDateLine: (v, makeExtent)->
+    #TODO filter by source
+    allowWrapDateLine = @allowWrapDateLine[@target.map.projection]
+    if ( v != @realDateLine )
+      map = @target.mapPanel.map
+      extent = map.getExtent()
+      for layer in map.layers
+        if layer.maxExtent.left <= map.maxExtent.left && layer.maxExtent.bottom <= map.maxExtent.bottom && layer.maxExtent.top >= map.maxExtent.top && layer.maxExtent.right >= map.maxExtent.right
+          layer.addOptions {wrapDateLine: v, displayOutsideMaxExtent: v}, true
+          layer.redraw()
+
+      if !v && makeExtent && @realDateLine
+        map.zoomToExtent extent
+
+      @realDateLine = v
+      @target.mapPanel.fireEvent("wrapdatelinechanged", @realDateLine)
+
+    if allowWrapDateLine
+      @wrapDateLine = v
+
+  genProjectionOptions: ->
+    boxLabel: @projectionsText[k], inputValue: k, name: 'proj', id: "gispro#{k}ProjectionRadio", checked: @target.map.projection == k for k,v of @projections
 
   addActions: ->
     graticul = new OpenLayers.Control.Graticule(@graticulOptions)
@@ -205,164 +356,6 @@ gxp.plugins.ViewMenu = Ext.extend(gxp.plugins.Tool,
     )
 
     gxp.plugins.ViewMenu.superclass.addActions.apply this, [ @menu ]
-
-
-  genProjectionOptions: ->
-    boxLabel: @projectionsText[k], inputValue: k, name: 'proj', id: "gispro#{k}ProjectionRadio", checked: @target.map.projection == k for k,v of @projections
-
-
-  cutExtent: (extent, maxExtent)->
-    left = if extent.left < maxExtent.left || extent.left == NaN then maxExtent.left else extent.left
-    bottom = if extent.bottom < maxExtent.bottom || extent.bottom == NaN then maxExtent.bottom else extent.bottom # +1 - fucking hack
-    right = if extent.right > maxExtent.right || extent.right == NaN then maxExtent.right else extent.right
-    top = if extent.top > maxExtent.top || extent.top == NaN then maxExtent.top else extent.top # -1 - fucking hack
-    new OpenLayers.Bounds left, bottom, right, top
-
-
-  reprojectMap: (projection, bounds)->
-    @target.mapPanel.fireEvent("beforeprojectionchanged", projection)
-
-    old_projection = @target.map.projection
-    @target.map.projection = projection
-    map = @target.mapPanel.map
-    #extent = @cutExtent map.getExtent(), map.maxExtent
-
-    resolution
-    if @projections[projection].units == @projections[old_projection].units
-      resolution = map.getResolution()
-    else
-      if @projections[projection].units == 'm'
-        resolution = map.getResolution() * 111000
-      else
-        resolution = map.getResolution() / 111000
-
-    center = map.center
-    options = @projections[projection]
-    map.setOptions options
-    map.setOptions { restrictedExtent: new OpenLayers.Bounds options.maxExtent.left*2, options.maxExtent.bottom*2, options.maxExtent.right*2, options.maxExtent.top*2 }
-
-    @reprojectLayers @target.map.projection, options
-
-    map.zoomToExtent options.maxExtent  #TODO hack: need better way
-    if @ov?
-      @ov.setProjection options
-
-    @setWrapDateLine(@allowWrapDateLine[@target.map.projection] && @wrapDateLine, false)
-
-    if bounds
-      center.transform(new OpenLayers.Projection(old_projection),new OpenLayers.Projection(projection))
-      #console.log center
-      #console.log resolution
-      #console.log(map.getZoomForResolution(resolution, true))
-      map.zoomTo map.getZoomForResolution(resolution, true)
-      map.setCenter center
-      #extent.transform(new OpenLayers.Projection(old_projection),new OpenLayers.Projection(projection))
-      #map.zoomToExtent extent
-    else
-      map.zoomToExtent options.maxExtent
-
-    @target.mapPanel.fireEvent("projectionchanged", projection)
-
-
-  reprojectLayers: (projection, options)->
-    map = @target.mapPanel.map
-
-    for layer in map.layers
-      i = @target.mapPanel.layers.findBy (rec)->
-        if rec.getLayer()? && layer?
-          rec.getLayer().id == layer.id
-
-      if i != -1
-        rec = @target.mapPanel.layers.getAt(i)
-        source = @target.layerSources[ rec.get('source') ]
-
-        if source?
-          if source.ptype == 'gxp_olsource'
-            source.projection = projection
-            rec.getLayer().isBaseLayer = true
-            @reprojectLayer options, layer
-
-          if source.ptype == 'gxp_wmscsource'
-            source.projection = projection
-            wgsMaxExtent = new OpenLayers.Bounds.fromArray( rec.get('wgsMaxExtentArray') )
-            maxExtent = null
-            #console.log(Math.abs(@projections["EPSG:4326"].maxExtent.left - wgsMaxExtent.left))
-            #console.log(Math.abs(@projections["EPSG:4326"].maxExtent.right - wgsMaxExtent.right))
-            #console.log(Math.abs(@projections["EPSG:4326"].maxExtent.top - wgsMaxExtent.top))
-            #console.log(Math.abs(@projections["EPSG:4326"].maxExtent.bottom - wgsMaxExtent.bottom))
-            buffer = 20
-            if Math.abs(@projections["EPSG:4326"].maxExtent.left - wgsMaxExtent.left)<buffer && Math.abs(@projections["EPSG:4326"].maxExtent.right - wgsMaxExtent.right)<buffer && Math.abs(@projections["EPSG:4326"].maxExtent.top - wgsMaxExtent.top)<buffer && Math.abs(@projections["EPSG:4326"].maxExtent.bottom - wgsMaxExtent.bottom)<buffer
-              maxExtent = @projections[projection].maxExtent
-            else
-              if projection == "EPSG:4326"
-                maxExtent = wgsMaxExtent
-              else
-                maxExtent = wgsMaxExtent.transform(new OpenLayers.Projection("EPSG:4326"),new OpenLayers.Projection(projection))
-
-            #console.log(
-              #rec.getLayer().params.LAYERS,
-              #rec.get('resolutions')[projection],
-              #rec.get('maxResolution')[projection],
-              #rec.get('minResolution')[projection],
-              #rec.get('maxExtent')[projection]
-            #)
-
-            @reprojectLayer {
-              projection: projection
-              #
-              #resolutions: if rec.get('resolutions')[projection]? then rec.get('resolutions')[projection] else options.resolutions
-              #maxResolution: if rec.get('maxResolution')[projection]? then rec.get('maxResolution')[projection] else options.maxResolution
-              #minResolution: if rec.get('minResolution')[projection]? then rec.get('minResolution')[projection] else options.minResolution
-              #maxExtent: if rec.get('maxExtent')[projection]? then rec.get('maxExtent')[projection] else options.maxExtent
-              #restrictedExtent: if rec.get('maxExtent')[projection]? then rec.get('maxExtent')[projection] else options.maxExtent
-              #
-              units: options.units
-              resolutions: rec.get('resolutions')[projection]
-              maxResolution: rec.get('maxResolution')[projection]
-              minResolution: rec.get('minResolution')[projection]
-              maxExtent: maxExtent #rec.get('maxExtent')[projection]
-              restrictedExtent: maxExtent # rec.get('maxExtent')[projection]
-            }, layer
-          if ( source.ptype == 'gxp_osmsource' || source.ptype == 'gxp_googlesource' ) && projection != 'EPSG:900913'
-            if rec.getLayer().visibility
-              @baseRec.getLayer().setVisibility true
-          else
-            if rec.getLayer().visibility
-              rec.getLayer().redraw()
-        else
-          @reprojectLayer options, layer
-
-
-  reprojectLayer: (options,layer)->
-    if layer.getTileOrigin?
-      layer.tileOrigin = null
-    layer.addOptions options, true
-    layer.addOptions {restrictedExtent: options.maxExtent}, true
-    if layer.visibility
-      layer.redraw()
-
-
-  setWrapDateLine: (v, makeExtent)->
-    #TODO filter by source
-    allowWrapDateLine = @allowWrapDateLine[@target.map.projection]
-    if ( v != @realDateLine )
-      map = @target.mapPanel.map
-      extent = map.getExtent()
-      for layer in map.layers
-        if layer.maxExtent.left <= map.maxExtent.left && layer.maxExtent.bottom <= map.maxExtent.bottom && layer.maxExtent.top >= map.maxExtent.top && layer.maxExtent.right >= map.maxExtent.right
-          layer.addOptions {wrapDateLine: v, displayOutsideMaxExtent: v}, true
-          layer.redraw()
-
-      if !v && makeExtent && @realDateLine
-        map.zoomToExtent extent
-
-      @realDateLine = v
-      @target.mapPanel.fireEvent("wrapdatelinechanged", @realDateLine)
-
-    if allowWrapDateLine
-      @wrapDateLine = v
-
-
 
 )
 Ext.preg gxp.plugins.ViewMenu::ptype, gxp.plugins.ViewMenu
