@@ -24,7 +24,7 @@ gxp.plugins.ViewMenu.prototype.wrapText = 'Неразрывная карта';
 gxp.plugins.ViewMenu.prototype.wrapTooltip = 'Неразрывная карта';
 
 gxp.plugins.ViewMenu.prototype.projectionsText = {
-  'EPSG:900913': 'Меркатор',
+  'EPSG:900913': 'Меркатора',
   'EPSG:4326': 'Географическая',
   'EPSG:102012': 'Коническая',
   'EPSG:3576': 'Полярная сервер',
